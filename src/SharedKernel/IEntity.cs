@@ -2,7 +2,7 @@ namespace RouteFlow.SharedKernel;
 
 public interface IDomainEvent
 {
-    DateTime OccurredAt { get; }
+    DateTimeOffset OccurredAt { get; }
 }
 
 public interface IEntity

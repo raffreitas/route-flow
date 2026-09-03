@@ -5,7 +5,7 @@ using static ArchUnitNET.Fluent.ArchRuleDefinition;
 
 namespace RouteFlow.ArchitectureTests;
 
-public class DeliveriesArchitectureTests
+public sealed class DeliveriesArchitectureTests
 {
     private static readonly Architecture Architecture = new ArchLoader()
         .LoadAssemblies(
