@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/Bootstrapper/">
+    <Project Path="src/Bootstrapper/RouteFlow.Api/RouteFlow.Api.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/" />
+  <Folder Name="/src/Modules/Deliveries/">
+    <Project Path="src/Modules/Deliveries/RouteFlow.Deliveries.Application/RouteFlow.Deliveries.Application.csproj" />
+    <Project Path="src/Modules/Deliveries/RouteFlow.Deliveries.Contracts/RouteFlow.Deliveries.Contracts.csproj" />
+    <Project Path="src/Modules/Deliveries/RouteFlow.Deliveries.Domain/RouteFlow.Deliveries.Domain.csproj" />
+    <Project Path="src/Modules/Deliveries/RouteFlow.Deliveries.Infrastructure/RouteFlow.Deliveries.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Orchestration/">
+    <Project Path="src/Orchestration/RouteFlow.AppHost/RouteFlow.AppHost.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/RouteFlow.ServiceDefaults/RouteFlow.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/src/SharedKernel/">
+    <Project Path="src/SharedKernel/RouteFlow.SharedKernel.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RouteFlow.ArchitectureTests/RouteFlow.ArchitectureTests.csproj" />
+    <Project Path="tests/RouteFlow.Deliveries.UnitTests/RouteFlow.Deliveries.UnitTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\RouteFlow.Deliveries.Domain\RouteFlow.Deliveries.Domain.csproj" />
+    <ProjectReference Include="..\RouteFlow.Deliveries.Contracts\RouteFlow.Deliveries.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\SharedKernel\RouteFlow.SharedKernel.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
