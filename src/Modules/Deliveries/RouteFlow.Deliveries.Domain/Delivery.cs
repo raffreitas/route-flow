@@ -8,6 +8,8 @@ namespace RouteFlow.Deliveries.Domain;
 
 public sealed class Delivery : AggregateRoot<DeliveryId>
 {
+    private const int MaxAttemptsForAbsentRecipient = 3;
+
     private readonly List<DeliveryAttempt> _attempts = [];
 
     public DeliveryStatus Status { get; private set; }
@@ -58,6 +60,8 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
 
     public void AssignDriver(DriverId driverId, DateTimeOffset? assignedAt = null)
     {
+        EnsureNotTerminalState();
+
         if (Status != DeliveryStatus.Requested)
         {
             throw new DomainException(
@@ -73,6 +77,8 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
 
     public void StartDispatchToPickup(DateTimeOffset? dispatchedAt = null)
     {
+        EnsureNotTerminalState();
+
         if (Status != DeliveryStatus.DriverAssigned)
         {
             throw new DomainException(
@@ -85,6 +91,8 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
 
     public void ConfirmArrivalAtPickup(DateTimeOffset? arrivedAt = null)
     {
+        EnsureNotTerminalState();
+
         if (Status != DeliveryStatus.DispatchedToPickup)
         {
             throw new DomainException(
@@ -97,6 +105,8 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
 
     public void ConfirmPickup(DriverId driverId, DateTimeOffset? pickedUpAt = null)
     {
+        EnsureNotTerminalState();
+
         if (Status != DeliveryStatus.ArrivedAtPickup)
         {
             throw new DomainException(
@@ -114,5 +124,111 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
         UpdatedAt = pickedUpAt ?? DateTimeOffset.UtcNow;
 
         AddDomainEvent(new PackagePickedUpDomainEvent(Id, driverId, UpdatedAt.Value));
+    }
+
+    public void ConfirmDeliveryToRecipient(DateTimeOffset? completedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status != DeliveryStatus.InTransit)
+        {
+            throw new DomainException(
+                $"Cannot confirm delivery to recipient when status is '{Status}'. Must be in 'InTransit' status.");
+        }
+
+        Status = DeliveryStatus.Completed;
+        CurrentCustody = Custody.Recipient;
+        UpdatedAt = completedAt ?? DateTimeOffset.UtcNow;
+
+        AddDomainEvent(new DeliveryCompletedDomainEvent(Id, UpdatedAt.Value));
+    }
+
+    public void RecordFailedAttempt(FailureReason reason, DateTimeOffset? occurredAt = null, string? notes = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status != DeliveryStatus.InTransit)
+        {
+            throw new DomainException(
+                $"Cannot record a failed delivery attempt when status is '{Status}'. Must be in 'InTransit' status.");
+        }
+
+        var timestamp = occurredAt ?? DateTimeOffset.UtcNow;
+        var attemptNumber = _attempts.Count + 1;
+        var attempt = new DeliveryAttempt(attemptNumber, reason, timestamp, notes);
+        _attempts.Add(attempt);
+        UpdatedAt = timestamp;
+
+        AddDomainEvent(new DeliveryAttemptFailedDomainEvent(Id, attemptNumber, reason, timestamp));
+
+        if (reason.Category == FailureCategory.RecipientRefused)
+        {
+            Status = DeliveryStatus.InReturn;
+            AddDomainEvent(new DeliveryReturnInitiatedDomainEvent(Id, "Recipient refused package", timestamp));
+            return;
+        }
+
+        if (reason.RequiresOperationalIssueQueue)
+        {
+            Status = DeliveryStatus.InOperationalIssue;
+            AddDomainEvent(new DeliverySentToOperationalIssueDomainEvent(Id, reason, timestamp));
+            return;
+        }
+
+        if (reason.Category == FailureCategory.RecipientAbsent)
+        {
+            if (attemptNumber >= MaxAttemptsForAbsentRecipient)
+            {
+                Status = DeliveryStatus.InReturn;
+                AddDomainEvent(new DeliveryReturnInitiatedDomainEvent(
+                    Id, $"Maximum delivery attempts reached ({MaxAttemptsForAbsentRecipient})", timestamp));
+                return;
+            }
+
+            Status = DeliveryStatus.PendingReschedule;
+            return;
+        }
+
+        Status = DeliveryStatus.PendingReschedule;
+    }
+
+    public void DispatchToNewRoute(DateTimeOffset? dispatchedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status is not (DeliveryStatus.PendingReschedule or DeliveryStatus.InOperationalIssue or DeliveryStatus.ReceivedAtHub))
+        {
+            throw new DomainException(
+                $"Cannot dispatch to new route from status '{Status}'. Must be in 'PendingReschedule', 'InOperationalIssue' or 'ReceivedAtHub'.");
+        }
+
+        Status = DeliveryStatus.InTransit;
+        UpdatedAt = dispatchedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void ConfirmReturnToSender(DateTimeOffset? returnedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status != DeliveryStatus.InReturn)
+        {
+            throw new DomainException(
+                $"Cannot confirm return to sender when status is '{Status}'. Must be in 'InReturn' status.");
+        }
+
+        Status = DeliveryStatus.ReturnedToSender;
+        CurrentCustody = Custody.Merchant;
+        UpdatedAt = returnedAt ?? DateTimeOffset.UtcNow;
+
+        AddDomainEvent(new DeliveryReturnedToSenderDomainEvent(Id, UpdatedAt.Value));
+    }
+
+    private void EnsureNotTerminalState()
+    {
+        if (Status is DeliveryStatus.Completed or DeliveryStatus.ReturnedToSender or DeliveryStatus.Canceled)
+        {
+            throw new DomainException(
+                $"Cannot modify delivery '{Id}' because it is already in terminal state '{Status}'.");
+        }
     }
 }
