@@ -20,3 +20,10 @@ public readonly record struct DriverId(Guid Value)
     public static DriverId From(Guid value) => new(value);
     public override string ToString() => Value.ToString();
 }
+
+public readonly record struct HubId(Guid Value)
+{
+    public static HubId New() => new(Guid.CreateVersion7());
+    public static HubId From(Guid value) => new(value);
+    public override string ToString() => Value.ToString();
+}

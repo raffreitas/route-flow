@@ -196,7 +196,8 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
     {
         EnsureNotTerminalState();
 
-        if (Status is not (DeliveryStatus.PendingReschedule or DeliveryStatus.InOperationalIssue or DeliveryStatus.ReceivedAtHub))
+        if (Status is not (DeliveryStatus.PendingReschedule or DeliveryStatus.InOperationalIssue
+            or DeliveryStatus.ReceivedAtHub))
         {
             throw new DomainException(
                 $"Cannot dispatch to new route from status '{Status}'. Must be in 'PendingReschedule', 'InOperationalIssue' or 'ReceivedAtHub'.");
@@ -204,6 +205,68 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
 
         Status = DeliveryStatus.InTransit;
         UpdatedAt = dispatchedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void ReportTransitIncident(string reason, DateTimeOffset? reportedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status != DeliveryStatus.InTransit)
+        {
+            throw new DomainException(
+                $"Cannot report transit incident when delivery is in status '{Status}'. Must be in 'InTransit' status.");
+        }
+
+        if (AssignedDriverId is null)
+        {
+            throw new DomainException("Cannot report transit incident without an assigned driver.");
+        }
+
+        Status = DeliveryStatus.HeldDueToIncident;
+        var timestamp = reportedAt ?? DateTimeOffset.UtcNow;
+        UpdatedAt = timestamp;
+
+        AddDomainEvent(new TransitIncidentReportedDomainEvent(Id, AssignedDriverId.Value, reason, timestamp));
+    }
+
+    public void CheckInPackageAtHub(HubId hubId, DateTimeOffset? checkedInAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status is not (DeliveryStatus.HeldDueToIncident or DeliveryStatus.InTransit
+            or DeliveryStatus.PendingReschedule))
+        {
+            throw new DomainException(
+                $"Cannot check in package at hub from status '{Status}'. Must be in 'HeldDueToIncident', 'InTransit' or 'PendingReschedule'.");
+        }
+
+        Status = DeliveryStatus.ReceivedAtHub;
+        CurrentCustody = Custody.Hub;
+        var timestamp = checkedInAt ?? DateTimeOffset.UtcNow;
+        UpdatedAt = timestamp;
+
+        AddDomainEvent(new PackageReceivedAtHubDomainEvent(Id, hubId, timestamp));
+    }
+
+    public void Cancel(string reason, DateTimeOffset? canceledAt = null)
+    {
+        EnsureNotTerminalState();
+
+        var timestamp = canceledAt ?? DateTimeOffset.UtcNow;
+        UpdatedAt = timestamp;
+
+        // If package is still in Merchant custody (before physical pickup)
+        if (CurrentCustody == Custody.Merchant)
+        {
+            Status = DeliveryStatus.Canceled;
+            AddDomainEvent(new DeliveryCanceledDomainEvent(Id, reason, timestamp));
+            return;
+        }
+
+        // If package was already collected and is in RouteFlow/Driver/Hub custody, cannot simply cancel!
+        Status = DeliveryStatus.InReturn;
+        AddDomainEvent(new DeliveryReturnInitiatedDomainEvent(
+            Id, $"Canceled while in custody: {reason}", timestamp));
     }
 
     public void ConfirmReturnToSender(DateTimeOffset? returnedAt = null)
