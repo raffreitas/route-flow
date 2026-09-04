@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\RouteFlow.Deliveries.Domain\RouteFlow.Deliveries.Domain.csproj" />
     <ProjectReference Include="..\RouteFlow.Deliveries.Application\RouteFlow.Deliveries.Application.csproj" />
+    <ProjectReference Include="..\..\Fleet\RouteFlow.Fleet.Contracts\RouteFlow.Fleet.Contracts.csproj" />
     <ProjectReference Include="..\..\..\SharedKernel\RouteFlow.SharedKernel.csproj" />
   </ItemGroup>
 

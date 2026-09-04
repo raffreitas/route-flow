@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
 using RouteFlow.Deliveries.Application.Abstractions;
+using RouteFlow.Deliveries.Application.Abstractions.Integrations;
 using RouteFlow.Deliveries.Infrastructure.Messaging;
+using RouteFlow.Deliveries.Infrastructure.Integrations;
 using RouteFlow.Deliveries.Infrastructure.Persistence;
 using RouteFlow.Deliveries.Infrastructure.Persistence.Queries;
 
@@ -36,6 +38,7 @@ public static class DependencyInjection
                 }));
         services.AddScoped<IDeliveryRepository, DeliveryRepository>();
         services.AddScoped<IDeliveryQueries, DeliveryQueries>();
+        services.AddScoped<IDriverAvailabilityGateway, FleetDriverAvailabilityGateway>();
         services.AddMetrics();
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<OutboxMetrics>();
