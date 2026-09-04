@@ -22,6 +22,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/RouteFlow.ArchitectureTests/RouteFlow.ArchitectureTests.csproj" />
     <Project Path="tests/RouteFlow.Deliveries.Application.UnitTests/RouteFlow.Deliveries.Application.UnitTests.csproj" />
+    <Project Path="tests/RouteFlow.Deliveries.Infrastructure.UnitTests/RouteFlow.Deliveries.Infrastructure.UnitTests.csproj" />
     <Project Path="tests/RouteFlow.Deliveries.UnitTests/RouteFlow.Deliveries.UnitTests.csproj" />
   </Folder>
 </Solution>

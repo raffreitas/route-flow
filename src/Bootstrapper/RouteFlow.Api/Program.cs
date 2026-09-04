@@ -1,8 +1,13 @@
+using RouteFlow.Deliveries.Infrastructure;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddDeliveriesInfrastructure(
+    builder.Configuration.GetConnectionString("deliveries")
+        ?? throw new InvalidOperationException("Connection string 'deliveries' is required."));
 
 var app = builder.Build();
 

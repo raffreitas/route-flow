@@ -4,6 +4,11 @@ namespace RouteFlow.Deliveries.Domain.ValueObjects;
 
 public sealed record FailureReason(FailureCategory Category, string Description)
 {
+    // Required by ORMs like EF Core
+    private FailureReason() : this(default, null!)
+    {
+    }
+
     public bool AllowsImmediateRetry => Category switch
     {
         FailureCategory.RecipientAbsent => true,

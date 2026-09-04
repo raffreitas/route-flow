@@ -10,6 +10,12 @@ public sealed class DeliveryAttempt
     public DateTimeOffset OccurredAt { get; private set; }
     public string? Notes { get; private set; }
 
+    // Required by ORMs like EF Core
+    private DeliveryAttempt()
+    {
+        Reason = null!;
+    }
+
     internal DeliveryAttempt(int attemptNumber, FailureReason reason, DateTimeOffset occurredAt, string? notes = null)
     {
         Id = Guid.CreateVersion7(occurredAt);

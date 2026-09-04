@@ -9,6 +9,11 @@ public sealed record DeliveryAddress(
     string State,
     string ZipCode)
 {
+    // Required by ORMs like EF Core
+    private DeliveryAddress() : this(null!, null!, null, null!, null!, null!, null!)
+    {
+    }
+
     public string Formatted => string.IsNullOrWhiteSpace(Complement)
         ? $"{Street}, {Number} - {Neighborhood}, {City} - {State}, {ZipCode}"
         : $"{Street}, {Number}, {Complement} - {Neighborhood}, {City} - {State}, {ZipCode}";

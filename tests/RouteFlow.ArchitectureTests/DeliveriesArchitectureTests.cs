@@ -30,4 +30,32 @@ public sealed class DeliveriesArchitectureTests
 
         rule.Check(Architecture);
     }
+
+    [Fact]
+    public void ApplicationLayer_ShouldNotDependOn_InfrastructureLayer()
+    {
+        var applicationTypes = Types().That().ResideInNamespace("RouteFlow.Deliveries.Application");
+        var infrastructureTypes = Types().That().ResideInNamespace("RouteFlow.Deliveries.Infrastructure");
+
+        var rule = Types().That().Are(applicationTypes)
+            .Should().NotDependOnAny(infrastructureTypes);
+
+        rule.Check(Architecture);
+    }
+
+    [Fact]
+    public void ContractsLayer_ShouldNotDependOn_InternalModuleLayers()
+    {
+        var contractTypes = Types().That().ResideInNamespace("RouteFlow.Deliveries.Contracts");
+        var domainTypes = Types().That().ResideInNamespace("RouteFlow.Deliveries.Domain");
+        var applicationTypes = Types().That().ResideInNamespace("RouteFlow.Deliveries.Application");
+        var infrastructureTypes = Types().That().ResideInNamespace("RouteFlow.Deliveries.Infrastructure");
+
+        var rule = Types().That().Are(contractTypes)
+            .Should().NotDependOnAny(domainTypes)
+            .AndShould().NotDependOnAny(applicationTypes)
+            .AndShould().NotDependOnAny(infrastructureTypes);
+
+        rule.Check(Architecture);
+    }
 }
