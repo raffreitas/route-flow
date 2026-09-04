@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
 using RouteFlow.Deliveries.Application.Abstractions;
 using RouteFlow.Deliveries.Infrastructure.Messaging;
 using RouteFlow.Deliveries.Infrastructure.Persistence;
@@ -16,10 +17,22 @@ public static class DependencyInjection
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
+        var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+        dataSourceBuilder.ConfigureTracing(options =>
+        {
+            options.ConfigureCommandFilter(commandFilter =>
+                !commandFilter.CommandText.Contains("-- outbox-poll", StringComparison.Ordinal));
+        });
+        var dataSource = dataSourceBuilder.Build();
+
         services.AddDbContext<DeliveriesDbContext>(options =>
             options.UseNpgsql(
-                connectionString,
-                npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", "deliveries")));
+                dataSource,
+                npgsqlOptions =>
+                {
+                    npgsqlOptions.MigrationsHistoryTable("__ef_migrations_history", "deliveries");
+                    npgsqlOptions.EnableRetryOnFailure();
+                }));
         services.AddScoped<IDeliveryRepository, DeliveryRepository>();
         services.AddScoped<IDeliveryQueries, DeliveryQueries>();
         services.TryAddSingleton(TimeProvider.System);
