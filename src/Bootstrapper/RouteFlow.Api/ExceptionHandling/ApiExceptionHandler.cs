@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Text.Json;
+using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using RouteFlow.Deliveries.Application.Exceptions;
 using RouteFlow.SharedKernel;
@@ -11,8 +14,28 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : I
         Exception exception,
         CancellationToken cancellationToken)
     {
+        if (exception is ValidationException validationException)
+        {
+            var errors = validationException.Errors
+                .GroupBy(failure => failure.PropertyName)
+                .ToDictionary(
+                    failures => failures.Key,
+                    failures => failures.Select(failure => failure.ErrorMessage).Distinct().ToArray());
+
+            await Results.ValidationProblem(
+                    errors,
+                    statusCode: StatusCodes.Status422UnprocessableEntity,
+                    title: "Invalid command",
+                    instance: httpContext.Request.Path)
+                .ExecuteAsync(httpContext);
+
+            return true;
+        }
+
         var (statusCode, title) = exception switch
         {
+            BadHttpRequestException badRequestException => (badRequestException.StatusCode, "Invalid request"),
+            JsonException => (StatusCodes.Status400BadRequest, "Invalid request"),
             DeliveryNotFoundException => (StatusCodes.Status404NotFound, "Delivery not found"),
             DeliveryConcurrencyException => (StatusCodes.Status409Conflict, "Delivery update conflict"),
             DomainException => (StatusCodes.Status422UnprocessableEntity, "Invalid delivery operation"),
@@ -25,9 +48,12 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : I
             logger.LogError(exception, "An unhandled exception occurred while processing the request.");
         }
 
-        var detail = statusCode == StatusCodes.Status500InternalServerError
-            ? "An unexpected error occurred."
-            : exception.Message;
+        var detail = exception switch
+        {
+            BadHttpRequestException or JsonException => "The request contains invalid data.",
+            _ when statusCode == StatusCodes.Status500InternalServerError => "An unexpected error occurred.",
+            _ => exception.Message
+        };
 
         await Results.Problem(
                 statusCode: statusCode,
@@ -35,6 +61,8 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : I
                 detail: detail,
                 instance: httpContext.Request.Path)
             .ExecuteAsync(httpContext);
+
+        Activity.Current?.SetStatus(ActivityStatusCode.Error, exception.GetBaseException().Message);
 
         return true;
     }

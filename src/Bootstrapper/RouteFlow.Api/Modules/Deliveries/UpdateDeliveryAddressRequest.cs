@@ -3,7 +3,7 @@ using RouteFlow.Deliveries.Application.Validation;
 
 namespace RouteFlow.Api.Modules.Deliveries;
 
-public sealed record CreateDeliveryAddressRequest(
+public sealed record UpdateDeliveryAddressRequest(
     [Required, StringLength(DeliveryValidationLimits.StreetMaxLength)]
     string Street,
     [Required, StringLength(DeliveryValidationLimits.AddressNumberMaxLength)]

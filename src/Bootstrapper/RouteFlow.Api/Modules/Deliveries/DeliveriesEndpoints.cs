@@ -1,9 +1,7 @@
 using RouteFlow.Deliveries.Application.Abstractions;
-using RouteFlow.Deliveries.Application.Deliveries.AssignDriver;
 using RouteFlow.Deliveries.Application.Deliveries.GetDelivery;
 using RouteFlow.Deliveries.Application.Deliveries.RequestDelivery;
 using RouteFlow.Deliveries.Application.Exceptions;
-using RouteFlow.Deliveries.Domain.Enums;
 using RouteFlow.Deliveries.Domain.ValueObjects;
 
 namespace RouteFlow.Api.Modules.Deliveries;
@@ -17,20 +15,17 @@ public static class DeliveriesEndpoints
         group.MapPost(string.Empty, CreateDeliveryAsync)
             .WithName("CreateDelivery")
             .Produces<CreateDeliveryResponse>(StatusCodes.Status201Created)
-            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+            .ProducesValidationProblem(StatusCodes.Status400BadRequest)
+            .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity);
 
         group.MapGet("/{deliveryId:guid}", GetDeliveryAsync)
             .WithName("GetDelivery")
             .Produces<DeliveryDetails>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
-        group.MapPost("/{deliveryId:guid}/assign-driver", AssignDriverAsync)
-            .WithName("AssignDeliveryDriver")
-            .Produces(StatusCodes.Status204NoContent)
-            .ProducesValidationProblem()
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict)
-            .ProducesProblem(StatusCodes.Status422UnprocessableEntity);
+        DeliveryPickupEndpoints.Map(group);
+        DeliveryLifecycleEndpoints.Map(group);
+        DeliveryRecoveryEndpoints.Map(group);
 
         return endpoints;
     }
@@ -75,34 +70,4 @@ public static class DeliveriesEndpoints
         return Results.Ok(delivery);
     }
 
-    private static async Task<IResult> AssignDriverAsync(
-        Guid deliveryId,
-        AssignDriverRequest request,
-        AssignDriverCommandHandler handler,
-        CancellationToken cancellationToken)
-    {
-        VehicleType? vehicleType = null;
-        if (request.VehicleType is not null)
-        {
-            if (!Enum.TryParse<VehicleType>(request.VehicleType, ignoreCase: true, out var parsedVehicleType)
-                || !Enum.IsDefined(parsedVehicleType))
-            {
-                return Results.ValidationProblem(new Dictionary<string, string[]>
-                {
-                    [nameof(request.VehicleType)] = ["The vehicle type is not supported."]
-                });
-            }
-
-            vehicleType = parsedVehicleType;
-        }
-
-        await handler.HandleAsync(
-            new AssignDriverCommand(
-                DeliveryId.From(deliveryId),
-                DriverId.From(request.DriverId),
-                vehicleType),
-            cancellationToken);
-
-        return Results.NoContent();
-    }
 }
