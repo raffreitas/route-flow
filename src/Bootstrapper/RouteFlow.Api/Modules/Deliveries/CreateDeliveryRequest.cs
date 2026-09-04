@@ -1,6 +1,8 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace RouteFlow.Api.Modules.Deliveries;
 
 public sealed record CreateDeliveryRequest(
-    Guid MerchantId,
-    CreateDeliveryAddressRequest Address,
-    CreateDeliveryPackageRequest Package);
+    [Required, NotEmptyGuid] Guid MerchantId,
+    [Required] CreateDeliveryAddressRequest Address,
+    [Required] CreateDeliveryPackageRequest Package);

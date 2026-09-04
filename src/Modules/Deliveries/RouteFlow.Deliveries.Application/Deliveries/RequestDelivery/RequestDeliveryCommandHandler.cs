@@ -1,3 +1,4 @@
+using FluentValidation;
 using RouteFlow.Deliveries.Application.Abstractions;
 using RouteFlow.Deliveries.Domain;
 using RouteFlow.Deliveries.Domain.ValueObjects;
@@ -6,13 +7,17 @@ namespace RouteFlow.Deliveries.Application.Deliveries.RequestDelivery;
 
 public sealed class RequestDeliveryCommandHandler(
     IDeliveryRepository repository,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IValidator<RequestDeliveryCommand>? validator = null)
 {
+    private readonly IValidator<RequestDeliveryCommand> _validator = validator ?? new RequestDeliveryCommandValidator();
+
     public async Task<DeliveryId> HandleAsync(
         RequestDeliveryCommand command,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+        await _validator.ValidateAndThrowAsync(command, cancellationToken);
 
         var address = new DeliveryAddress(
             command.Address.Street,

@@ -1,3 +1,4 @@
+using FluentValidation;
 using NSubstitute;
 using RouteFlow.Deliveries.Application.Abstractions;
 using RouteFlow.Deliveries.Application.Deliveries.RequestDelivery;
@@ -52,5 +53,27 @@ public sealed class RequestDeliveryCommandHandlerTests
         Assert.Equal(7, deliveryId.Value.Version);
         await repository.Received(1).AddAsync(delivery, CancellationToken.None);
         await repository.Received(1).SaveChangesAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Handle_WhenCommandIsInvalid_ShouldThrowBeforePersisting()
+    {
+        // Arrange
+        var repository = Substitute.For<IDeliveryRepository>();
+        var command = new RequestDeliveryCommand(
+            Guid.Empty,
+            new DeliveryAddressInput("", "", null, "", "", "", ""),
+            new PackageInput(0, 0, 0, 0, ""));
+        var handler = new RequestDeliveryCommandHandler(
+            repository,
+            new FixedTimeProvider(DeliveryTestData.Now));
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ValidationException>(() =>
+            handler.HandleAsync(command, CancellationToken.None));
+        await repository.DidNotReceive().AddAsync(
+            Arg.Any<Delivery>(),
+            Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 }

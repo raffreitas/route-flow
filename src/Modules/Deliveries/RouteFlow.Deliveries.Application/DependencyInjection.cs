@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RouteFlow.Deliveries.Application.Deliveries.AssignDriver;
@@ -27,6 +28,16 @@ public static class DependencyInjection
     public static IServiceCollection AddDeliveriesApplication(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IValidator<AuthorizeReturnCommand>, AuthorizeReturnCommandValidator>();
+        services.AddScoped<IValidator<CancelDeliveryCommand>, CancelDeliveryCommandValidator>();
+        services.AddScoped<IValidator<ConfirmAddressChangeInTransitCommand>, ConfirmAddressChangeInTransitCommandValidator>();
+        services.AddScoped<IValidator<RecordFailedAttemptCommand>, RecordFailedAttemptCommandValidator>();
+        services.AddScoped<IValidator<ReleaseDriverBeforePickupCommand>, ReleaseDriverBeforePickupCommandValidator>();
+        services.AddScoped<IValidator<ReportIncompatibleVehicleCommand>, ReportIncompatibleVehicleCommandValidator>();
+        services.AddScoped<IValidator<ReportTransitIncidentCommand>, ReportTransitIncidentCommandValidator>();
+        services.AddScoped<IValidator<RequestDeliveryCommand>, RequestDeliveryCommandValidator>();
+        services.AddScoped<IValidator<ResolveAddressIssueCommand>, ResolveAddressIssueCommandValidator>();
+        services.AddScoped<IValidator<UpdateAddressBeforePickupCommand>, UpdateAddressBeforePickupCommandValidator>();
         services.AddScoped<AssignDriverCommandHandler>();
         services.AddScoped<AuthorizeReturnCommandHandler>();
         services.AddScoped<CancelDeliveryCommandHandler>();
