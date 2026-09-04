@@ -32,13 +32,13 @@ internal static class DeliveryTestData
         return delivery;
     }
 
-    internal static Delivery CreateDeliveryInOperationalIssue()
+    internal static Delivery CreateDeliveryInOperationalIssue(DateTimeOffset? issueStartedAt = null)
     {
         var delivery = CreateDeliveryAtPickup(out var driverId);
         delivery.ConfirmPickup(driverId, Now.AddMinutes(-30));
         delivery.RecordFailedAttempt(
             new FailureReason(FailureCategory.AddressNotFound, "Address not found"),
-            Now.AddMinutes(-20));
+            issueStartedAt ?? Now.AddMinutes(-20));
         return delivery;
     }
 
@@ -49,6 +49,27 @@ internal static class DeliveryTestData
         delivery.RecordFailedAttempt(
             new FailureReason(FailureCategory.RecipientAbsent, "Recipient absent"),
             Now.AddMinutes(-20));
+        return delivery;
+    }
+
+    internal static Delivery CreateDeliveryInTransit()
+    {
+        var delivery = CreateDeliveryAtPickup(out var driverId);
+        delivery.ConfirmPickup(driverId, Now.AddMinutes(-30));
+        return delivery;
+    }
+
+    internal static Delivery CreateDeliveryHeldDueToIncident()
+    {
+        var delivery = CreateDeliveryInTransit();
+        delivery.ReportTransitIncident("Vehicle breakdown", Now.AddMinutes(-20));
+        return delivery;
+    }
+
+    internal static Delivery CreateDeliveryInReturn()
+    {
+        var delivery = CreateDeliveryInTransit();
+        delivery.Cancel("Merchant requested return", Now.AddMinutes(-20));
         return delivery;
     }
 }
