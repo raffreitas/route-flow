@@ -111,6 +111,12 @@ RouteFlow.slnx
     └── RouteFlow.IntegrationTests/           # Testes de integração com Aspire / Testcontainers
 ```
 
+### Organização interna por Vertical Slices
+
+As fronteiras de projeto (`Domain`, `Application`, `Infrastructure` e `Contracts`) permanecem iguais para todos os módulos. Dentro de `Application` e no host HTTP, os arquivos podem ser agrupados por caso de uso, como `RegisterDriver`, `SetDriverAvailability` e `GetDriverAvailability`, mantendo comando, validação e handler próximos.
+
+Essa organização é uma escolha interna do módulo e não altera as regras de dependência: slices não acessam a infraestrutura diretamente, contratos públicos não expõem tipos internos e integrações entre módulos continuam passando por portas e adapters explícitos. Não usamos MediatR; cada endpoint invoca o handler da sua slice diretamente.
+
 ---
 
 ## 5. Roadmap de Implementação Passo a Passo
