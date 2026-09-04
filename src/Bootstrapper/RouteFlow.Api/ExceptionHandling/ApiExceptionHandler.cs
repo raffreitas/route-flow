@@ -3,6 +3,7 @@ using System.Text.Json;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using RouteFlow.Deliveries.Application.Exceptions;
+using RouteFlow.Fleet.Application.Exceptions;
 using RouteFlow.SharedKernel;
 
 namespace RouteFlow.Api.ExceptionHandling;
@@ -38,7 +39,9 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger) : I
             JsonException => (StatusCodes.Status400BadRequest, "Invalid request"),
             DeliveryNotFoundException => (StatusCodes.Status404NotFound, "Delivery not found"),
             DeliveryConcurrencyException => (StatusCodes.Status409Conflict, "Delivery update conflict"),
-            DomainException => (StatusCodes.Status422UnprocessableEntity, "Invalid delivery operation"),
+            DriverNotFoundException => (StatusCodes.Status404NotFound, "Driver not found"),
+            DriverConcurrencyException => (StatusCodes.Status409Conflict, "Driver update conflict"),
+            DomainException => (StatusCodes.Status422UnprocessableEntity, "Invalid operation"),
             ArgumentException => (StatusCodes.Status422UnprocessableEntity, "Invalid request"),
             _ => (StatusCodes.Status500InternalServerError, "Unexpected server error")
         };

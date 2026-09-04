@@ -10,6 +10,12 @@
     <Project Path="src/Modules/Deliveries/RouteFlow.Deliveries.Domain/RouteFlow.Deliveries.Domain.csproj" />
     <Project Path="src/Modules/Deliveries/RouteFlow.Deliveries.Infrastructure/RouteFlow.Deliveries.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Fleet/">
+    <Project Path="src/Modules/Fleet/RouteFlow.Fleet.Application/RouteFlow.Fleet.Application.csproj" />
+    <Project Path="src/Modules/Fleet/RouteFlow.Fleet.Contracts/RouteFlow.Fleet.Contracts.csproj" />
+    <Project Path="src/Modules/Fleet/RouteFlow.Fleet.Domain/RouteFlow.Fleet.Domain.csproj" />
+    <Project Path="src/Modules/Fleet/RouteFlow.Fleet.Infrastructure/RouteFlow.Fleet.Infrastructure.csproj" />
+  </Folder>
   <Folder Name="/src/Orchestration/">
     <Project Path="src/Orchestration/RouteFlow.AppHost/RouteFlow.AppHost.csproj" />
   </Folder>
@@ -26,5 +32,8 @@
     <Project Path="tests/RouteFlow.Deliveries.Infrastructure.UnitTests/RouteFlow.Deliveries.Infrastructure.UnitTests.csproj" />
     <Project Path="tests/RouteFlow.Deliveries.IntegrationTests/RouteFlow.Deliveries.IntegrationTests.csproj" />
     <Project Path="tests/RouteFlow.Deliveries.UnitTests/RouteFlow.Deliveries.UnitTests.csproj" />
+    <Project Path="tests/RouteFlow.Fleet.Application.UnitTests/RouteFlow.Fleet.Application.UnitTests.csproj" />
+    <Project Path="tests/RouteFlow.Fleet.IntegrationTests/RouteFlow.Fleet.IntegrationTests.csproj" />
+    <Project Path="tests/RouteFlow.Fleet.UnitTests/RouteFlow.Fleet.UnitTests.csproj" />
   </Folder>
 </Solution>

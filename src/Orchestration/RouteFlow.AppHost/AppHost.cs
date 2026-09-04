@@ -1,14 +1,18 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var deliveriesDatabase = builder
+var postgres = builder
     .AddPostgres("postgres")
     .WithDataVolume()
-    .WithHostPort(5432)
-    .AddDatabase("deliveries");
+    .WithHostPort(5432);
+
+var deliveriesDatabase = postgres.AddDatabase("deliveries");
+var fleetDatabase = postgres.AddDatabase("fleet");
 
 builder
     .AddProject<Projects.RouteFlow_Api>("api")
     .WithReference(deliveriesDatabase)
-    .WaitFor(deliveriesDatabase);
+    .WithReference(fleetDatabase)
+    .WaitFor(deliveriesDatabase)
+    .WaitFor(fleetDatabase);
 
 await builder.Build().RunAsync();
