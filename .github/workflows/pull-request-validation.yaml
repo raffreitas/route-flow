@@ -1,0 +1,64 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-release-version:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release version
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) return;
+            const text = `${pr.title || ''}\n${pr.body || ''}`;
+            const bumps = [...text.matchAll(/\[(major|minor|patch)\]/gi)]
+              .map((match) => match[1].toLowerCase());
+
+            if (bumps.length === 1) {
+              const bump = bumps[0];
+              const { owner, repo } = context.repo;
+              const tags = await github.paginate(github.rest.repos.listTags, { owner, repo, per_page: 100 });
+
+              function parseSemver(tag) {
+                const match = tag.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
+                if (!match) return null;
+                return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+              }
+
+              let latest = { major: 0, minor: 0, patch: 0 };
+              for (const tag of tags) {
+                const version = parseSemver(tag.name);
+                if (!version) continue;
+                if (
+                  version.major > latest.major ||
+                  (version.major === latest.major && version.minor > latest.minor) ||
+                  (version.major === latest.major && version.minor === latest.minor && version.patch > latest.patch)
+                ) {
+                  latest = version;
+                }
+              }
+
+              if (bump === 'major') { latest.major += 1; latest.minor = 0; latest.patch = 0; }
+              else if (bump === 'minor') { latest.minor += 1; latest.patch = 0; }
+              else { latest.patch += 1; }
+
+              const nextTag = `v${latest.major}.${latest.minor}.${latest.patch}`;
+              core.info(`SemVer bump tag found: ${bump}. Expected release tag: ${nextTag}`);
+              await core.summary.addRaw(`## Release prevista\n\n**${nextTag}** (${bump})\n`).write();
+              return;
+            }
+
+            core.setFailed(
+              bumps.length === 0
+                ? 'Add exactly one SemVer marker: [Patch], [Minor], or [Major], in the PR title or body.'
+                : 'Use exactly one SemVer marker: [Patch], [Minor], or [Major].'
+            );
