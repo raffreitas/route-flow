@@ -1,5 +1,6 @@
 using NSubstitute;
 using RouteFlow.Deliveries.Application.Abstractions;
+using RouteFlow.Deliveries.Application.Abstractions.Integrations;
 using RouteFlow.Deliveries.Application.Deliveries.AssignDriver;
 using RouteFlow.Deliveries.Application.Exceptions;
 using RouteFlow.Deliveries.Application.UnitTests.TestSupport;
@@ -21,6 +22,7 @@ public sealed class AssignDriverCommandHandlerTests
         var driverId = DriverId.New();
         var handler = new AssignDriverCommandHandler(
             repository,
+            CreateAvailableDriverGateway(driverId),
             new FixedTimeProvider(DeliveryTestData.Now));
 
         var command = new AssignDriverCommand(delivery.Id, driverId);
@@ -44,6 +46,7 @@ public sealed class AssignDriverCommandHandlerTests
         var missingId = DeliveryId.New();
         var handler = new AssignDriverCommandHandler(
             repository,
+            Substitute.For<IDriverAvailabilityGateway>(),
             new FixedTimeProvider(DeliveryTestData.Now));
 
         var command = new AssignDriverCommand(missingId, DriverId.New());
@@ -66,10 +69,12 @@ public sealed class AssignDriverCommandHandlerTests
         delivery.AssignDriver(DriverId.New());
         var repository = Substitute.For<IDeliveryRepository>();
         repository.GetByIdAsync(delivery.Id, CancellationToken.None).Returns(delivery);
+        var driverId = DriverId.New();
         var handler = new AssignDriverCommandHandler(
             repository,
+            CreateAvailableDriverGateway(driverId),
             new FixedTimeProvider(DeliveryTestData.Now));
-        var command = new AssignDriverCommand(delivery.Id, DriverId.New());
+        var command = new AssignDriverCommand(delivery.Id, driverId);
 
         // Act & Assert
         await Assert.ThrowsAsync<DomainException>(() => handler.HandleAsync(command, CancellationToken.None));
@@ -87,11 +92,12 @@ public sealed class AssignDriverCommandHandlerTests
             DeliveryTestData.Now.AddMinutes(-30));
         var repository = Substitute.For<IDeliveryRepository>();
         repository.GetByIdAsync(delivery.Id, CancellationToken.None).Returns(delivery);
+        var driverId = DriverId.New();
         var handler = new AssignDriverCommandHandler(
             repository,
+            CreateAvailableDriverGateway(driverId, VehicleType.Van),
             new FixedTimeProvider(DeliveryTestData.Now));
-        var driverId = DriverId.New();
-        var command = new AssignDriverCommand(delivery.Id, driverId, VehicleType.Van);
+        var command = new AssignDriverCommand(delivery.Id, driverId);
 
         // Act
         await handler.HandleAsync(command, CancellationToken.None);
@@ -100,5 +106,37 @@ public sealed class AssignDriverCommandHandlerTests
         Assert.Equal(DeliveryStatus.DriverAssigned, delivery.Status);
         Assert.Equal(driverId, delivery.AssignedDriverId);
         await repository.Received(1).SaveChangesAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Handle_WhenDriverIsUnavailable_ShouldThrowAndNotPersist()
+    {
+        // Arrange
+        var delivery = DeliveryTestData.CreateRequestedDelivery();
+        var repository = Substitute.For<IDeliveryRepository>();
+        repository.GetByIdAsync(delivery.Id, CancellationToken.None).Returns(delivery);
+        var driverId = DriverId.New();
+        var gateway = Substitute.For<IDriverAvailabilityGateway>();
+        gateway.GetDriverAvailabilityAsync(driverId, CancellationToken.None)
+            .Returns(new DriverAvailabilitySnapshot(driverId, false, VehicleType.Motorcycle));
+        var handler = new AssignDriverCommandHandler(
+            repository,
+            gateway,
+            new FixedTimeProvider(DeliveryTestData.Now));
+
+        // Act & Assert
+        await Assert.ThrowsAsync<DomainException>(() =>
+            handler.HandleAsync(new AssignDriverCommand(delivery.Id, driverId), CancellationToken.None));
+        await repository.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    private static IDriverAvailabilityGateway CreateAvailableDriverGateway(
+        DriverId driverId,
+        VehicleType vehicleType = VehicleType.Motorcycle)
+    {
+        var gateway = Substitute.For<IDriverAvailabilityGateway>();
+        gateway.GetDriverAvailabilityAsync(driverId, Arg.Any<CancellationToken>())
+            .Returns(new DriverAvailabilitySnapshot(driverId, true, vehicleType));
+        return gateway;
     }
 }
