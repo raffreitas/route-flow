@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
 using RouteFlow.Deliveries.Application.Abstractions;
 using RouteFlow.Deliveries.Infrastructure.Messaging;
@@ -35,11 +36,18 @@ public static class DependencyInjection
                 }));
         services.AddScoped<IDeliveryRepository, DeliveryRepository>();
         services.AddScoped<IDeliveryQueries, DeliveryQueries>();
+        services.AddMetrics();
         services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<OutboxMetrics>();
         services.AddSingleton<InProcessIntegrationEventQueue>();
         services.AddScoped<IIntegrationEventPublisher, InProcessIntegrationEventPublisher>();
         services.AddHostedService<InProcessIntegrationEventDispatcher>();
         services.AddHostedService<OutboxProcessor>();
+        services.AddHealthChecks()
+            .AddCheck<DeliveriesOutboxHealthCheck>(
+                "deliveries-outbox",
+                failureStatus: HealthStatus.Unhealthy,
+                tags: ["ready"]);
 
         return services;
     }
