@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using RouteFlow.Deliveries.Domain;
-using RouteFlow.Deliveries.Domain.Entities;
 using RouteFlow.Deliveries.Domain.ValueObjects;
 
 namespace RouteFlow.Deliveries.Infrastructure.Persistence.Configurations;

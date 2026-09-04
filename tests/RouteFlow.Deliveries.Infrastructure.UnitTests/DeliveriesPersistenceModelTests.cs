@@ -1,10 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using RouteFlow.Deliveries.Application.Abstractions;
 using RouteFlow.Deliveries.Domain;
 using RouteFlow.Deliveries.Domain.Entities;
-using RouteFlow.Deliveries.Infrastructure;
 using RouteFlow.Deliveries.Infrastructure.Persistence;
 
 namespace RouteFlow.Deliveries.Infrastructure.UnitTests;

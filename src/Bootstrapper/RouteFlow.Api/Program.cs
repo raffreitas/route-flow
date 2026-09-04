@@ -1,6 +1,7 @@
-using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
 using RouteFlow.Api.ExceptionHandling;
 using RouteFlow.Api.Modules.Deliveries;
+using RouteFlow.Deliveries.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,10 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    await using var scope = app.Services.CreateAsyncScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<DeliveriesDbContext>();
+    if ((await dbContext.Database.GetPendingMigrationsAsync()).Any())
+        await dbContext.Database.MigrateAsync();
 }
 
 app.UseExceptionHandler();
@@ -23,6 +28,6 @@ app.UseHttpsRedirection();
 app.MapDeliveriesEndpoints();
 app.MapDefaultEndpoints();
 
-app.Run();
+await app.RunAsync();
 
 public partial class Program;
