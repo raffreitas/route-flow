@@ -63,7 +63,7 @@ Para que a migração para microserviços seja viável sem reescrever o código 
 
 > [!IMPORTANT]
 > **Regra 2: Comunicação Síncrona Apenas por Interfaces Públicas**  
-> Se o módulo de Entregas precisa consultar algo no módulo de Frotas, ele nunca acessa a entidade de domínio do outro. Ele consulta uma interface pública explícita (ex: `IFleetModuleApi`), que devolve apenas DTOs imutáveis.
+> Se o módulo de Entregas precisa consultar algo do contexto de Frotas, ele nunca acessa entidades internas desse contexto. A Application depende de uma porta orientada à capacidade (ex: `IDriverAvailabilityGateway`), que pode ser implementada por chamada em processo hoje e por HTTP/gRPC no futuro, sempre traduzindo contratos externos para DTOs imutáveis locais.
 
 > **Regra 3: Comunicação Assíncrona via Eventos de Integração (Sem MediatR)**  
 > Eventos que interessam a outros módulos são publicados como `IntegrationEvents`. No início, trafegam via despacho explícito ou canais assíncronos fortemente tipados (`System.Threading.Channels`), sem intermediários mágicos como o MediatR. Na migração, basta trocar o despachante para RabbitMQ/Kafka sem alterar os handlers de negócio.
