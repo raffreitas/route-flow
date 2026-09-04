@@ -3,6 +3,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 var deliveriesDatabase = builder
     .AddPostgres("postgres")
     .WithDataVolume()
+    .WithHostPort(5432)
     .AddDatabase("deliveries");
 
 builder
@@ -10,4 +11,4 @@ builder
     .WithReference(deliveriesDatabase)
     .WaitFor(deliveriesDatabase);
 
-builder.Build().Run();
+await builder.Build().RunAsync();
