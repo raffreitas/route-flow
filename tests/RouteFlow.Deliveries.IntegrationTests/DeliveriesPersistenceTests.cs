@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using RouteFlow.Deliveries.Application.Abstractions;
@@ -15,7 +16,7 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
     private static readonly DateTimeOffset Now = new(2026, 9, 4, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task Migrations_WhenDatabaseStartsEmpty_ShouldApplyInitialDeliveriesMigration()
+    public async Task Migrations_WhenDatabaseStartsEmpty_ShouldApplyAllDeliveriesMigrations()
     {
         // Arrange
         await using var dbContext = fixture.CreateDbContext();
@@ -25,6 +26,54 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
 
         // Assert
         Assert.Contains(appliedMigrations, migration => migration.EndsWith("_InitialDeliveries"));
+        Assert.Contains(appliedMigrations, migration => migration.EndsWith("_AddDeliveriesOutbox"));
+    }
+
+    [Fact]
+    public async Task Repository_WhenAggregateHasDomainEvents_ShouldPersistOutboxMessage()
+    {
+        // Arrange
+        var delivery = CreateRequestedDelivery();
+        await using (var serviceProvider = CreateServiceProvider())
+        await using (var scope = serviceProvider.CreateAsyncScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<IDeliveryRepository>();
+            await repository.AddAsync(delivery);
+
+            // Act
+            await repository.SaveChangesAsync();
+        }
+
+        // Assert
+        Assert.Empty(delivery.DomainEvents);
+
+        await using var dbContext = fixture.CreateDbContext();
+        var connection = dbContext.Database.GetDbConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT type, content::text, occurred_at
+            FROM deliveries.outbox_messages
+            WHERE aggregate_id = @aggregateId
+            """;
+        var aggregateId = command.CreateParameter();
+        aggregateId.ParameterName = "aggregateId";
+        aggregateId.Value = delivery.Id.Value;
+        command.Parameters.Add(aggregateId);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(
+            "RouteFlow.Deliveries.Domain.Events.DeliveryRequestedDomainEvent",
+            reader.GetString(0));
+        Assert.Equal(Now, reader.GetFieldValue<DateTimeOffset>(2));
+
+        using var content = JsonDocument.Parse(reader.GetString(1));
+        Assert.Equal(
+            delivery.Id.Value,
+            content.RootElement.GetProperty("deliveryId").GetProperty("value").GetGuid());
+        Assert.False(await reader.ReadAsync());
     }
 
     [Fact]
@@ -103,6 +152,7 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
         var persisted = await verificationRepository.GetByIdAsync(delivery.Id);
         Assert.Equal("100", persisted!.Address.Number);
         Assert.Equal(2u, persisted.Version);
+        Assert.Equal(2, await CountOutboxMessagesAsync(delivery.Id));
     }
 
     private ServiceProvider CreateServiceProvider()
@@ -110,6 +160,26 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
         var services = new ServiceCollection();
         services.AddDeliveriesInfrastructure(fixture.ConnectionString);
         return services.BuildServiceProvider();
+    }
+
+    private async Task<long> CountOutboxMessagesAsync(DeliveryId deliveryId)
+    {
+        await using var dbContext = fixture.CreateDbContext();
+        var connection = dbContext.Database.GetDbConnection();
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM deliveries.outbox_messages
+            WHERE aggregate_id = @aggregateId
+            """;
+        var aggregateId = command.CreateParameter();
+        aggregateId.ParameterName = "aggregateId";
+        aggregateId.Value = deliveryId.Value;
+        command.Parameters.Add(aggregateId);
+
+        return (long)(await command.ExecuteScalarAsync())!;
     }
 
     private static Delivery CreateDeliveryWithFailedAttempt()
