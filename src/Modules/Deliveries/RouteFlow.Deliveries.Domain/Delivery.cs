@@ -9,6 +9,7 @@ namespace RouteFlow.Deliveries.Domain;
 public sealed class Delivery : AggregateRoot<DeliveryId>
 {
     private const int MaxAttemptsForAbsentRecipient = 3;
+    private static readonly TimeSpan OperationalIssueResolutionWindow = TimeSpan.FromHours(48);
 
     private readonly List<DeliveryAttempt> _attempts = [];
 
@@ -16,6 +17,7 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
     public Custody CurrentCustody { get; private set; }
     public MerchantId MerchantId { get; private set; }
     public DriverId? AssignedDriverId { get; private set; }
+    public VehicleType? RequiredVehicleType { get; private set; }
     public DeliveryAddress Address { get; private set; }
     public PackageInfo Package { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
@@ -60,12 +62,34 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
 
     public void AssignDriver(DriverId driverId, DateTimeOffset? assignedAt = null)
     {
+        AssignDriver(driverId, assignedAt, vehicleType: null);
+    }
+
+    public void AssignDriver(DriverId driverId, VehicleType vehicleType, DateTimeOffset? assignedAt = null)
+    {
+        AssignDriver(driverId, assignedAt, vehicleType);
+    }
+
+    private void AssignDriver(DriverId driverId, DateTimeOffset? assignedAt, VehicleType? vehicleType)
+    {
         EnsureNotTerminalState();
 
         if (Status != DeliveryStatus.Requested)
         {
             throw new DomainException(
                 $"Cannot assign driver when delivery is in status '{Status}'. Only deliveries in 'Requested' status can be assigned.");
+        }
+
+        if (RequiredVehicleType is not null && vehicleType is null)
+        {
+            throw new DomainException(
+                $"Vehicle type '{RequiredVehicleType}' is required to assign a driver to this delivery.");
+        }
+
+        if (RequiredVehicleType is not null && vehicleType != RequiredVehicleType)
+        {
+            throw new DomainException(
+                $"Cannot assign vehicle type '{vehicleType}' when delivery requires '{RequiredVehicleType}'.");
         }
 
         AssignedDriverId = driverId;
@@ -124,6 +148,83 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
         UpdatedAt = pickedUpAt ?? DateTimeOffset.UtcNow;
 
         AddDomainEvent(new PackagePickedUpDomainEvent(Id, driverId, UpdatedAt.Value));
+    }
+
+    public void UpdateAddressBeforePickup(DeliveryAddress newAddress, DateTimeOffset? updatedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (CurrentCustody != Custody.Merchant)
+        {
+            throw new DomainException("Cannot update address as a pre-pickup change after package custody leaves the merchant.");
+        }
+
+        UpdateAddress(newAddress, updatedAt ?? DateTimeOffset.UtcNow);
+    }
+
+    public void ConfirmAddressChangeInTransit(DeliveryAddress newAddress, DateTimeOffset? confirmedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status != DeliveryStatus.InTransit)
+        {
+            throw new DomainException(
+                $"Cannot confirm an in-transit address change when delivery is in status '{Status}'. Must be in 'InTransit' status.");
+        }
+
+        UpdateAddress(newAddress, confirmedAt ?? DateTimeOffset.UtcNow);
+    }
+
+    public void ReleaseDriverBeforePickup(string reason, DateTimeOffset? releasedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status is not (DeliveryStatus.DriverAssigned or DeliveryStatus.DispatchedToPickup))
+        {
+            throw new DomainException(
+                $"Cannot release driver when delivery is in status '{Status}'. Must be in 'DriverAssigned' or 'DispatchedToPickup' status.");
+        }
+
+        var driverId = AssignedDriverId
+            ?? throw new DomainException("Cannot release driver without an assigned driver.");
+        var timestamp = releasedAt ?? DateTimeOffset.UtcNow;
+
+        AssignedDriverId = null;
+        Status = DeliveryStatus.Requested;
+        UpdatedAt = timestamp;
+
+        AddDomainEvent(new DriverReleasedDomainEvent(Id, driverId, reason, timestamp));
+    }
+
+    public void ReportIncompatibleVehicle(
+        VehicleType requiredVehicleType,
+        string reason,
+        DateTimeOffset? reportedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status != DeliveryStatus.ArrivedAtPickup)
+        {
+            throw new DomainException(
+                $"Cannot report incompatible vehicle when delivery is in status '{Status}'. Must be in 'ArrivedAtPickup' status.");
+        }
+
+        if (!Enum.IsDefined(requiredVehicleType))
+        {
+            throw new DomainException($"Vehicle type '{requiredVehicleType}' is not supported.");
+        }
+
+        var driverId = AssignedDriverId
+            ?? throw new DomainException("Cannot report incompatible vehicle without an assigned driver.");
+        var timestamp = reportedAt ?? DateTimeOffset.UtcNow;
+
+        AssignedDriverId = null;
+        RequiredVehicleType = requiredVehicleType;
+        Status = DeliveryStatus.Requested;
+        UpdatedAt = timestamp;
+
+        AddDomainEvent(new IncompatibleVehicleReportedDomainEvent(
+            Id, driverId, requiredVehicleType, reason, timestamp));
     }
 
     public void ConfirmDeliveryToRecipient(DateTimeOffset? completedAt = null)
@@ -192,15 +293,86 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
         Status = DeliveryStatus.PendingReschedule;
     }
 
-    public void DispatchToNewRoute(DateTimeOffset? dispatchedAt = null)
+    public void ResolveAddressIssue(DeliveryAddress newAddress, DateTimeOffset? resolvedAt = null)
     {
         EnsureNotTerminalState();
 
-        if (Status is not (DeliveryStatus.PendingReschedule or DeliveryStatus.InOperationalIssue
-            or DeliveryStatus.ReceivedAtHub))
+        if (Status != DeliveryStatus.InOperationalIssue)
         {
             throw new DomainException(
-                $"Cannot dispatch to new route from status '{Status}'. Must be in 'PendingReschedule', 'InOperationalIssue' or 'ReceivedAtHub'.");
+                $"Cannot resolve address issue when delivery is in status '{Status}'. Must be in 'InOperationalIssue' status.");
+        }
+
+        ArgumentNullException.ThrowIfNull(newAddress);
+        Status = DeliveryStatus.PendingReschedule;
+        var timestamp = resolvedAt ?? DateTimeOffset.UtcNow;
+        UpdateAddress(newAddress, timestamp);
+    }
+
+    public void AuthorizeReturn(string reason, DateTimeOffset? authorizedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status is not (DeliveryStatus.InOperationalIssue or DeliveryStatus.ReceivedAtHub))
+        {
+            throw new DomainException(
+                $"Cannot authorize return when delivery is in status '{Status}'. Must be in 'InOperationalIssue' or 'ReceivedAtHub' status.");
+        }
+
+        Status = DeliveryStatus.InReturn;
+        var timestamp = authorizedAt ?? DateTimeOffset.UtcNow;
+        UpdatedAt = timestamp;
+
+        AddDomainEvent(new DeliveryReturnInitiatedDomainEvent(Id, reason, timestamp));
+    }
+
+    public void ExpireOperationalIssue(DateTimeOffset? expiredAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status != DeliveryStatus.InOperationalIssue)
+        {
+            throw new DomainException(
+                $"Cannot expire operational issue when delivery is in status '{Status}'. Must be in 'InOperationalIssue' status.");
+        }
+
+        var timestamp = expiredAt ?? DateTimeOffset.UtcNow;
+        var resolutionDeadline = UpdatedAt!.Value.Add(OperationalIssueResolutionWindow);
+        if (timestamp < resolutionDeadline)
+        {
+            throw new DomainException($"Operational issue cannot expire before '{resolutionDeadline:O}'.");
+        }
+
+        Status = DeliveryStatus.InReturn;
+        UpdatedAt = timestamp;
+
+        AddDomainEvent(new OperationalIssueExpiredDomainEvent(Id, timestamp));
+        AddDomainEvent(new DeliveryReturnInitiatedDomainEvent(Id, "Operational issue resolution window expired", timestamp));
+    }
+
+    public void DispatchToNewRoute(DriverId? driverId = null, DateTimeOffset? dispatchedAt = null)
+    {
+        EnsureNotTerminalState();
+
+        if (Status is not (DeliveryStatus.PendingReschedule or DeliveryStatus.ReceivedAtHub))
+        {
+            throw new DomainException(
+                $"Cannot dispatch to new route from status '{Status}'. Must be in 'PendingReschedule' or 'ReceivedAtHub'.");
+        }
+
+        if (Status == DeliveryStatus.ReceivedAtHub)
+        {
+            if (driverId is null)
+            {
+                throw new DomainException("A driver is required to dispatch a package from the hub.");
+            }
+
+            AssignedDriverId = driverId;
+            CurrentCustody = Custody.Driver;
+        }
+        else if (driverId is not null)
+        {
+            AssignedDriverId = driverId;
         }
 
         Status = DeliveryStatus.InTransit;
@@ -242,6 +414,7 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
 
         Status = DeliveryStatus.ReceivedAtHub;
         CurrentCustody = Custody.Hub;
+        AssignedDriverId = null;
         var timestamp = checkedInAt ?? DateTimeOffset.UtcNow;
         UpdatedAt = timestamp;
 
@@ -258,8 +431,27 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
         // If package is still in Merchant custody (before physical pickup)
         if (CurrentCustody == Custody.Merchant)
         {
+            var statusBeforeCancellation = Status;
+            var assignedDriverId = AssignedDriverId;
+            AssignedDriverId = null;
             Status = DeliveryStatus.Canceled;
-            AddDomainEvent(new DeliveryCanceledDomainEvent(Id, reason, timestamp));
+
+            if (statusBeforeCancellation == DeliveryStatus.ArrivedAtPickup && assignedDriverId is not null)
+            {
+                AddDomainEvent(new PickupCanceledByMerchantDomainEvent(
+                    Id, assignedDriverId.Value, reason, timestamp));
+            }
+            else
+            {
+                if (assignedDriverId is not null)
+                {
+                    AddDomainEvent(new DriverReleasedDomainEvent(
+                        Id, assignedDriverId.Value, reason, timestamp));
+                }
+
+                AddDomainEvent(new DeliveryCanceledDomainEvent(Id, reason, timestamp));
+            }
+
             return;
         }
 
@@ -293,5 +485,12 @@ public sealed class Delivery : AggregateRoot<DeliveryId>
             throw new DomainException(
                 $"Cannot modify delivery '{Id}' because it is already in terminal state '{Status}'.");
         }
+    }
+
+    private void UpdateAddress(DeliveryAddress newAddress, DateTimeOffset timestamp)
+    {
+        Address = newAddress ?? throw new ArgumentNullException(nameof(newAddress));
+        UpdatedAt = timestamp;
+        AddDomainEvent(new DeliveryAddressUpdatedDomainEvent(Id, newAddress, timestamp));
     }
 }

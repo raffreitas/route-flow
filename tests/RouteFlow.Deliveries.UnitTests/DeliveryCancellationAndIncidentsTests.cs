@@ -44,6 +44,7 @@ public sealed class DeliveryCancellationAndIncidentsTests
         // Assert
         Assert.Equal(DeliveryStatus.Canceled, delivery.Status);
         Assert.Equal(Custody.Merchant, delivery.CurrentCustody);
+        Assert.Null(delivery.AssignedDriverId);
 
         var canceledEvent = delivery.DomainEvents
             .OfType<DeliveryCanceledDomainEvent>()
@@ -74,6 +75,51 @@ public sealed class DeliveryCancellationAndIncidentsTests
 
         Assert.NotNull(returnEvent);
         Assert.Equal(delivery.Id, returnEvent.DeliveryId);
+    }
+
+    [Fact]
+    public void Cancel_WhenDriverIsAtPickup_ShouldCancelReleaseDriverAndEmitPickupCanceledEvent()
+    {
+        // Arrange
+        var delivery = CreateRequestedDelivery();
+        var driverId = DriverId.New();
+        delivery.AssignDriver(driverId);
+        delivery.StartDispatchToPickup();
+        delivery.ConfirmArrivalAtPickup();
+
+        // Act
+        delivery.Cancel("Merchant canceled at pickup");
+
+        // Assert
+        Assert.Equal(DeliveryStatus.Canceled, delivery.Status);
+        Assert.Equal(Custody.Merchant, delivery.CurrentCustody);
+        Assert.Null(delivery.AssignedDriverId);
+        var domainEvent = Assert.IsType<PickupCanceledByMerchantDomainEvent>(delivery.DomainEvents.Last());
+        Assert.Equal(driverId, domainEvent.DriverId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Cancel_WhenDriverIsAssignedBeforeArrival_ShouldEmitDriverReleasedEvent(bool alreadyDispatched)
+    {
+        // Arrange
+        var delivery = CreateRequestedDelivery();
+        var driverId = DriverId.New();
+        delivery.AssignDriver(driverId);
+        if (alreadyDispatched)
+        {
+            delivery.StartDispatchToPickup();
+        }
+
+        // Act
+        delivery.Cancel("Merchant canceled before pickup");
+
+        // Assert
+        Assert.Null(delivery.AssignedDriverId);
+        var releasedEvent = Assert.Single(delivery.DomainEvents.OfType<DriverReleasedDomainEvent>());
+        Assert.Equal(driverId, releasedEvent.DriverId);
+        Assert.IsType<DeliveryCanceledDomainEvent>(delivery.DomainEvents.Last());
     }
 
     [Fact]
@@ -127,6 +173,7 @@ public sealed class DeliveryCancellationAndIncidentsTests
         // Assert - Physical custody is now safely with the RouteFlow Hub!
         Assert.Equal(DeliveryStatus.ReceivedAtHub, delivery.Status);
         Assert.Equal(Custody.Hub, delivery.CurrentCustody);
+        Assert.Null(delivery.AssignedDriverId);
 
         var hubEvent = delivery.DomainEvents
             .OfType<PackageReceivedAtHubDomainEvent>()
