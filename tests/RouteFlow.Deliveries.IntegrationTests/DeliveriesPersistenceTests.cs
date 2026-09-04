@@ -172,6 +172,55 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
     }
 
     [Fact]
+    public async Task Queries_WhenDeliveryExists_ShouldProjectCompleteDetailsWithDapper()
+    {
+        // Arrange
+        var delivery = CreateDeliveryWithFailedAttempt();
+        await using var serviceProvider = CreateServiceProvider();
+        await using (var writeScope = serviceProvider.CreateAsyncScope())
+        {
+            var repository = writeScope.ServiceProvider.GetRequiredService<IDeliveryRepository>();
+            await repository.AddAsync(delivery);
+            await repository.SaveChangesAsync();
+        }
+
+        // Act
+        await using var readScope = serviceProvider.CreateAsyncScope();
+        var queries = readScope.ServiceProvider.GetRequiredService<IDeliveryQueries>();
+        var details = await queries.GetByIdAsync(delivery.Id);
+
+        // Assert
+        Assert.NotNull(details);
+        Assert.Equal(delivery.Id.Value, details.Id);
+        Assert.Equal(delivery.MerchantId.Value, details.MerchantId);
+        Assert.Equal(nameof(DeliveryStatus.PendingReschedule), details.Status);
+        Assert.Equal(nameof(Custody.Driver), details.Custody);
+        Assert.Equal("Rua A", details.Address.Street);
+        Assert.Equal(1.5m, details.Package.WeightKg);
+        Assert.Equal(1u, details.Version);
+
+        var attempt = Assert.Single(details.Attempts);
+        Assert.Equal(1, attempt.AttemptNumber);
+        Assert.Equal(nameof(FailureCategory.RecipientAbsent), attempt.FailureCategory);
+        Assert.Equal("No answer at the door", attempt.Notes);
+    }
+
+    [Fact]
+    public async Task Queries_WhenDeliveryDoesNotExist_ShouldReturnNull()
+    {
+        // Arrange
+        await using var serviceProvider = CreateServiceProvider();
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var queries = scope.ServiceProvider.GetRequiredService<IDeliveryQueries>();
+
+        // Act
+        var details = await queries.GetByIdAsync(DeliveryId.New());
+
+        // Assert
+        Assert.Null(details);
+    }
+
+    [Fact]
     public async Task Repository_WhenTwoWritersUpdateSameDelivery_ShouldThrowDeliveryConcurrencyException()
     {
         // Arrange
