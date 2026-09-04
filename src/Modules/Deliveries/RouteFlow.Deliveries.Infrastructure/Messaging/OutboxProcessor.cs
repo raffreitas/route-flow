@@ -11,6 +11,7 @@ namespace RouteFlow.Deliveries.Infrastructure.Messaging;
 internal sealed class OutboxProcessor(
     IServiceScopeFactory scopeFactory,
     TimeProvider timeProvider,
+    OutboxMetrics metrics,
     ILogger<OutboxProcessor> logger) : BackgroundService
 {
     private const int BatchSize = 20;
@@ -20,6 +21,7 @@ internal sealed class OutboxProcessor(
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            var batchStartedAt = Stopwatch.GetTimestamp();
             try
             {
                 var processNextBatchImmediately = await ProcessPendingMessagesAsync(stoppingToken);
@@ -34,8 +36,13 @@ internal sealed class OutboxProcessor(
             }
             catch (Exception exception)
             {
+                metrics.RecordProcessorError();
                 logger.LogError(exception, "An error occurred while processing the deliveries outbox.");
                 await Task.Delay(PollingInterval, timeProvider, stoppingToken);
+            }
+            finally
+            {
+                metrics.RecordBatchDuration(Stopwatch.GetElapsedTime(batchStartedAt));
             }
         }
     }
@@ -59,6 +66,8 @@ internal sealed class OutboxProcessor(
             .ToListAsync(cancellationToken);
 
         if (messages.Count == 0) return false;
+
+        metrics.RecordBatchSize(messages.Count);
 
         var contexts = messages
             .Select(message => TryGetActivityContext(
@@ -87,6 +96,7 @@ internal sealed class OutboxProcessor(
         {
             var message = messages[index];
             var parentContext = contexts[index];
+            metrics.RecordMessageAge(timeProvider.GetUtcNow() - message.OccurredAt);
             try
             {
                 using var messageActivity = StartMessageActivity(parentContext);
@@ -99,6 +109,7 @@ internal sealed class OutboxProcessor(
                     message.Content);
                 await publisher.PublishAsync(envelope, cancellationToken);
                 message.MarkProcessed(timeProvider.GetUtcNow());
+                metrics.RecordMessageProcessed();
                 processedCount++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -109,6 +120,7 @@ internal sealed class OutboxProcessor(
             {
                 var error = exception.GetBaseException().Message;
                 message.MarkFailed(timeProvider.GetUtcNow(), error);
+                metrics.RecordMessageFailed();
                 failedCount++;
                 logger.LogWarning(
                     exception,

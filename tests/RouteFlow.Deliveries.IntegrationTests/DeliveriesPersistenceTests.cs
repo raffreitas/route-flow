@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using RouteFlow.Deliveries.Application.Abstractions;
 using RouteFlow.Deliveries.Application.Exceptions;
@@ -93,6 +96,8 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
     public async Task OutboxProcessor_WhenHandlerFailsOnce_ShouldRetryEnvelopeAndMarkMessageProcessed()
     {
         // Arrange
+        var measurements = new ConcurrentDictionary<string, long>();
+        using var meterListener = CreateOutboxMeterListener(measurements);
         var delivery = CreateRequestedDelivery();
         var handler = new RetryOnceDeliveryRequestedHandler(delivery.Id.Value);
         await using var serviceProvider = CreateServiceProvider(services =>
@@ -128,6 +133,11 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
             Assert.Equal(2, outboxState.AttemptCount);
             Assert.NotNull(outboxState.ProcessedAt);
             Assert.Null(outboxState.Error);
+            Assert.True(measurements["routeflow.deliveries.outbox.messages.failed"] >= 1);
+            Assert.True(measurements["routeflow.deliveries.outbox.messages.processed"] >= 1);
+            Assert.True(measurements["routeflow.deliveries.outbox.batch.duration"] >= 1);
+            Assert.True(measurements["routeflow.deliveries.outbox.batch.size"] >= 1);
+            Assert.True(measurements["routeflow.deliveries.outbox.message.age"] >= 1);
         }
         finally
         {
@@ -135,6 +145,47 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
             {
                 await hostedService.StopAsync(CancellationToken.None);
             }
+        }
+    }
+
+    [Fact]
+    public async Task OutboxHealthCheck_WhenOldestPendingMessageIsStale_ShouldBeDegraded()
+    {
+        // Arrange
+        await DeleteOutboxMessagesAsync();
+        var staleDelivery = Delivery.Request(
+            DeliveryId.New(),
+            MerchantId.New(),
+            CreateAddress("11"),
+            new PackageInfo(1.5m, new PackageDimensions(20, 15, 10), "Stale parcel"),
+            DateTimeOffset.UtcNow.AddMinutes(-6));
+
+        try
+        {
+            await using var serviceProvider = CreateServiceProvider();
+            await using (var scope = serviceProvider.CreateAsyncScope())
+            {
+                var repository = scope.ServiceProvider.GetRequiredService<IDeliveryRepository>();
+                await repository.AddAsync(staleDelivery);
+                await repository.SaveChangesAsync();
+            }
+
+            var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
+
+            // Act
+            var report = await healthCheckService.CheckHealthAsync(
+                registration => registration.Name == "deliveries-outbox");
+
+            // Assert
+            Assert.Equal(HealthStatus.Degraded, report.Status);
+            var entry = Assert.Single(report.Entries).Value;
+            Assert.True((int)entry.Data["pending_count"] >= 1);
+            Assert.Equal(0, entry.Data["failed_count"]);
+            Assert.True((double)entry.Data["oldest_pending_age_seconds"] >= 300);
+        }
+        finally
+        {
+            await DeleteOutboxMessagesAsync();
         }
     }
 
@@ -337,6 +388,35 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
         command.Parameters.Add(aggregateId);
 
         return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task DeleteOutboxMessagesAsync()
+    {
+        await using var dbContext = fixture.CreateDbContext();
+        await dbContext.Database.ExecuteSqlRawAsync("DELETE FROM deliveries.outbox_messages");
+    }
+
+    private static MeterListener CreateOutboxMeterListener(
+        ConcurrentDictionary<string, long> measurements)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Meter.Name == "RouteFlow.Deliveries")
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, measurement, _, _) =>
+            measurements.AddOrUpdate(instrument.Name, measurement, (_, current) => current + measurement));
+        listener.SetMeasurementEventCallback<int>((instrument, _, _, _) =>
+            measurements.AddOrUpdate(instrument.Name, 1, (_, current) => current + 1));
+        listener.SetMeasurementEventCallback<double>((instrument, _, _, _) =>
+            measurements.AddOrUpdate(instrument.Name, 1, (_, current) => current + 1));
+        listener.Start();
+        return listener;
     }
 
     private static Delivery CreateDeliveryWithFailedAttempt()
