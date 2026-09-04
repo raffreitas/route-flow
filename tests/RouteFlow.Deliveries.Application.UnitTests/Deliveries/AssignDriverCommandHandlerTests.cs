@@ -75,4 +75,30 @@ public sealed class AssignDriverCommandHandlerTests
         await Assert.ThrowsAsync<DomainException>(() => handler.HandleAsync(command, CancellationToken.None));
         await repository.DidNotReceive().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task Handle_WhenDeliveryRequiresVehicleType_ShouldAssignCompatibleVehicle()
+    {
+        // Arrange
+        var delivery = DeliveryTestData.CreateDeliveryAtPickup(out _);
+        delivery.ReportIncompatibleVehicle(
+            VehicleType.Van,
+            "Package requires a van",
+            DeliveryTestData.Now.AddMinutes(-30));
+        var repository = Substitute.For<IDeliveryRepository>();
+        repository.GetByIdAsync(delivery.Id, CancellationToken.None).Returns(delivery);
+        var handler = new AssignDriverCommandHandler(
+            repository,
+            new FixedTimeProvider(DeliveryTestData.Now));
+        var driverId = DriverId.New();
+        var command = new AssignDriverCommand(delivery.Id, driverId, VehicleType.Van);
+
+        // Act
+        await handler.HandleAsync(command, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(DeliveryStatus.DriverAssigned, delivery.Status);
+        Assert.Equal(driverId, delivery.AssignedDriverId);
+        await repository.Received(1).SaveChangesAsync(CancellationToken.None);
+    }
 }

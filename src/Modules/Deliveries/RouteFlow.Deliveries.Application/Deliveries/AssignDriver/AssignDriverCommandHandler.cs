@@ -14,7 +14,16 @@ public sealed class AssignDriverCommandHandler(
         var delivery = await repository.GetByIdAsync(command.DeliveryId, cancellationToken)
             ?? throw new DeliveryNotFoundException(command.DeliveryId);
 
-        delivery.AssignDriver(command.DriverId, timeProvider.GetUtcNow());
+        var assignedAt = timeProvider.GetUtcNow();
+        if (command.VehicleType is { } vehicleType)
+        {
+            delivery.AssignDriver(command.DriverId, vehicleType, assignedAt);
+        }
+        else
+        {
+            delivery.AssignDriver(command.DriverId, assignedAt);
+        }
+
         await repository.SaveChangesAsync(cancellationToken);
     }
 }
