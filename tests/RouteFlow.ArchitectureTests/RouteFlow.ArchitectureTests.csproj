@@ -30,6 +30,10 @@
     <ProjectReference Include="..\..\src\Modules\Deliveries\RouteFlow.Deliveries.Application\RouteFlow.Deliveries.Application.csproj" />
     <ProjectReference Include="..\..\src\Modules\Deliveries\RouteFlow.Deliveries.Infrastructure\RouteFlow.Deliveries.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Modules\Deliveries\RouteFlow.Deliveries.Contracts\RouteFlow.Deliveries.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Fleet\RouteFlow.Fleet.Domain\RouteFlow.Fleet.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Fleet\RouteFlow.Fleet.Application\RouteFlow.Fleet.Application.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Fleet\RouteFlow.Fleet.Infrastructure\RouteFlow.Fleet.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Modules\Fleet\RouteFlow.Fleet.Contracts\RouteFlow.Fleet.Contracts.csproj" />
     <ProjectReference Include="..\..\src\SharedKernel\RouteFlow.SharedKernel.csproj" />
     <ProjectReference Include="..\..\src\Bootstrapper\RouteFlow.Api\RouteFlow.Api.csproj" />
   </ItemGroup>
