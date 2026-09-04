@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using RouteFlow.Deliveries.Domain;
 using RouteFlow.Deliveries.Infrastructure.Messaging;
@@ -26,6 +27,9 @@ public sealed class DeliveriesDbContext(DbContextOptions<DeliveriesDbContext> op
 
     private void AddOutboxMessages()
     {
+        var activity = Activity.Current;
+        var traceParent = activity?.IdFormat == ActivityIdFormat.W3C ? activity.Id : null;
+        var traceState = traceParent is null ? null : activity?.TraceStateString;
         var entries = ChangeTracker
             .Entries<Delivery>()
             .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
@@ -39,7 +43,9 @@ public sealed class DeliveriesDbContext(DbContextOptions<DeliveriesDbContext> op
                     integrationEvent.DeliveryId,
                     occurredAt,
                     type,
-                    IntegrationEventSerializer.Serialize(integrationEvent)));
+                    IntegrationEventSerializer.Serialize(integrationEvent),
+                    traceParent,
+                    traceState));
             }
 
             entry.Entity.ClearDomainEvents();

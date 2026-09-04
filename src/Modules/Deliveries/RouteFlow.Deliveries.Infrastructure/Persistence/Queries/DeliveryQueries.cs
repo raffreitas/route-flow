@@ -51,7 +51,7 @@ internal sealed class DeliveryQueries(DeliveriesDbContext dbContext) : IDelivery
             """;
 
         var parameters = new DynamicParameters();
-        parameters.Add("@DeliveryId", deliveryId);
+        parameters.Add("@DeliveryId", deliveryId.Value);
 
         var command = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
 
