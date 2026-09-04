@@ -113,6 +113,10 @@ namespace RouteFlow.Deliveries.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("aggregate_id");
 
+                    b.Property<int>("AttemptCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt_count");
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("jsonb")
@@ -122,6 +126,10 @@ namespace RouteFlow.Deliveries.Infrastructure.Persistence.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
                         .HasColumnName("error");
+
+                    b.Property<DateTimeOffset?>("LastAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_attempt_at");
 
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone")

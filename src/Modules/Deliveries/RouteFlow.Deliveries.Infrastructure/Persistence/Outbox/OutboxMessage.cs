@@ -26,6 +26,8 @@ internal sealed class OutboxMessage
     public string Type { get; private set; } = string.Empty;
     public string Content { get; private set; } = string.Empty;
     public DateTimeOffset? ProcessedAt { get; private set; }
+    public DateTimeOffset? LastAttemptAt { get; private set; }
+    public int AttemptCount { get; private set; }
     public string? Error { get; private set; }
 
     public static OutboxMessage Create(
@@ -35,5 +37,20 @@ internal sealed class OutboxMessage
         string content)
     {
         return new OutboxMessage(Guid.CreateVersion7(), aggregateId, occurredAt, type, content);
+    }
+
+    public void MarkProcessed(DateTimeOffset processedAt)
+    {
+        ProcessedAt = processedAt;
+        LastAttemptAt = processedAt;
+        AttemptCount++;
+        Error = null;
+    }
+
+    public void MarkFailed(DateTimeOffset attemptedAt, string error)
+    {
+        LastAttemptAt = attemptedAt;
+        AttemptCount++;
+        Error = error.Length <= 2000 ? error : error[..2000];
     }
 }

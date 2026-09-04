@@ -1,14 +1,12 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using RouteFlow.Deliveries.Domain;
+using RouteFlow.Deliveries.Infrastructure.Messaging;
 using RouteFlow.Deliveries.Infrastructure.Persistence.Outbox;
 
 namespace RouteFlow.Deliveries.Infrastructure.Persistence;
 
 public sealed class DeliveriesDbContext(DbContextOptions<DeliveriesDbContext> options) : DbContext(options)
 {
-    private static readonly JsonSerializerOptions OutboxSerializerOptions = new(JsonSerializerDefaults.Web);
-
     public DbSet<Delivery> Deliveries => Set<Delivery>();
 
     internal DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
@@ -28,26 +26,23 @@ public sealed class DeliveriesDbContext(DbContextOptions<DeliveriesDbContext> op
 
     private void AddOutboxMessages()
     {
-        var aggregates = ChangeTracker
+        var entries = ChangeTracker
             .Entries<Delivery>()
             .Where(entry => entry.State is EntityState.Added or EntityState.Modified)
-            .Select(entry => entry.Entity)
-            .Where(delivery => delivery.DomainEvents.Count > 0)
             .ToArray();
 
-        foreach (var aggregate in aggregates)
+        foreach (var entry in entries)
         {
-            foreach (var domainEvent in aggregate.DomainEvents)
+            foreach (var (type, occurredAt, integrationEvent) in DeliveryIntegrationEventMapper.Map(entry))
             {
-                var eventType = domainEvent.GetType();
                 OutboxMessages.Add(OutboxMessage.Create(
-                    aggregate.Id.Value,
-                    domainEvent.OccurredAt,
-                    eventType.FullName ?? eventType.Name,
-                    JsonSerializer.Serialize(domainEvent, eventType, OutboxSerializerOptions)));
+                    integrationEvent.DeliveryId,
+                    occurredAt,
+                    type,
+                    IntegrationEventSerializer.Serialize(integrationEvent)));
             }
 
-            aggregate.ClearDomainEvents();
+            entry.Entity.ClearDomainEvents();
         }
     }
 

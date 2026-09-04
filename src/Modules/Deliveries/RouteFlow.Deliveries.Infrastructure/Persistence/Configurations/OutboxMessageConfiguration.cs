@@ -23,6 +23,8 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
             .HasColumnType("jsonb")
             .HasColumnName("content");
         builder.Property(message => message.ProcessedAt).HasColumnName("processed_at");
+        builder.Property(message => message.LastAttemptAt).HasColumnName("last_attempt_at");
+        builder.Property(message => message.AttemptCount).HasColumnName("attempt_count");
         builder.Property(message => message.Error)
             .HasMaxLength(2000)
             .HasColumnName("error");

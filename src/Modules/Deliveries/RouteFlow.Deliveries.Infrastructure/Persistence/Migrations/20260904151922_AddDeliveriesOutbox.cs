@@ -22,6 +22,8 @@ namespace RouteFlow.Deliveries.Infrastructure.Persistence.Migrations
                     type = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     content = table.Column<string>(type: "jsonb", nullable: false),
                     processed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    last_attempt_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    attempt_count = table.Column<int>(type: "integer", nullable: false),
                     error = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true)
                 },
                 constraints: table =>
