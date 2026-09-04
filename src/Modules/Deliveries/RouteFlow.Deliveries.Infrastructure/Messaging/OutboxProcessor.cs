@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -21,8 +22,10 @@ internal sealed class OutboxProcessor(
         {
             try
             {
-                var processedMessages = await ProcessPendingMessagesAsync(stoppingToken);
-                if (processedMessages) continue;
+                var processNextBatchImmediately = await ProcessPendingMessagesAsync(stoppingToken);
+                if (processNextBatchImmediately)
+                    continue;
+
                 await Task.Delay(PollingInterval, timeProvider, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -40,31 +43,55 @@ internal sealed class OutboxProcessor(
     private async Task<bool> ProcessPendingMessagesAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
+
         var dbContext = scope.ServiceProvider.GetRequiredService<DeliveriesDbContext>();
         var publisher = scope.ServiceProvider.GetRequiredService<IIntegrationEventPublisher>();
+
+        var retryBefore = timeProvider.GetUtcNow() - PollingInterval;
+
         var messages = await dbContext.OutboxMessages
             .TagWith("outbox-poll")
-            .Where(message => message.ProcessedAt == null)
+            .Where(message => message.ProcessedAt == null
+                              && (message.LastAttemptAt == null || message.LastAttemptAt <= retryBefore))
             .OrderBy(message => message.OccurredAt)
             .ThenBy(message => message.Id)
             .Take(BatchSize)
             .ToListAsync(cancellationToken);
 
-        if (messages.Count == 0)
-            return false;
+        if (messages.Count == 0) return false;
 
-        using var activity = DeliveriesActivitySource.Instance.StartActivity("process delivery outbox");
+        var contexts = messages
+            .Select(message => TryGetActivityContext(
+                message.TraceParent,
+                message.TraceState))
+            .ToArray();
 
-        activity?.SetTag("outbox.message.count", messages.Count);
-        activity?.SetTag("outbox.batch.size", BatchSize);
+        var links = contexts
+            .Where(context => context.HasValue)
+            .Select(context => new ActivityLink(context!.Value))
+            .ToArray();
+
+        using var batchActivity = DeliveriesActivitySource.Instance.StartActivity(
+            "process outbox",
+            ActivityKind.Internal,
+            parentContext: default,
+            links: links);
+
+        batchActivity?.SetTag("outbox.message.count", messages.Count);
+        batchActivity?.SetTag("outbox.batch.size", BatchSize);
 
         var processedCount = 0;
         var failedCount = 0;
 
-        foreach (var message in messages)
+        for (var index = 0; index < messages.Count; index++)
         {
+            var message = messages[index];
+            var parentContext = contexts[index];
             try
             {
+                using var messageActivity = StartMessageActivity(parentContext);
+                messageActivity?.SetTag("outbox.message.type", message.Type);
+
                 var envelope = IntegrationEventSerializer.DeserializeEnvelope(
                     message.Id,
                     message.Type,
@@ -90,11 +117,31 @@ internal sealed class OutboxProcessor(
             }
         }
 
-        activity?.SetTag("outbox.message.processed_count", processedCount);
-        activity?.SetTag("outbox.message.failed_count", failedCount);
-
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return true;
+        batchActivity?.SetTag("outbox.message.processed_count", processedCount);
+        batchActivity?.SetTag("outbox.message.failed_count", failedCount);
+
+        return messages.Count == BatchSize;
+    }
+
+    private static Activity? StartMessageActivity(ActivityContext? parentContext)
+    {
+        return DeliveriesActivitySource.Instance.StartActivity(
+            "process outbox message",
+            ActivityKind.Internal,
+            parentContext ?? default(ActivityContext));
+    }
+
+    private static ActivityContext? TryGetActivityContext(string? traceParent, string? traceState)
+    {
+        if (string.IsNullOrWhiteSpace(traceParent))
+        {
+            return null;
+        }
+
+        return ActivityContext.TryParse(traceParent, traceState, isRemote: true, out var context)
+            ? context
+            : null;
     }
 }

@@ -11,13 +11,17 @@ internal sealed class OutboxMessage
         Guid aggregateId,
         DateTimeOffset occurredAt,
         string type,
-        string content)
+        string content,
+        string? traceParent = null,
+        string? traceState = null)
     {
         Id = id;
         AggregateId = aggregateId;
         OccurredAt = occurredAt;
         Type = type;
         Content = content;
+        TraceParent = traceParent;
+        TraceState = traceState;
     }
 
     public Guid Id { get; private set; }
@@ -29,14 +33,25 @@ internal sealed class OutboxMessage
     public DateTimeOffset? LastAttemptAt { get; private set; }
     public int AttemptCount { get; private set; }
     public string? Error { get; private set; }
+    public string? TraceParent { get; private set; }
+    public string? TraceState { get; private set; }
 
     public static OutboxMessage Create(
         Guid aggregateId,
         DateTimeOffset occurredAt,
         string type,
-        string content)
+        string content,
+        string? traceParent = null,
+        string? traceState = null)
     {
-        return new OutboxMessage(Guid.CreateVersion7(), aggregateId, occurredAt, type, content);
+        return new OutboxMessage(
+            Guid.CreateVersion7(),
+            aggregateId,
+            occurredAt,
+            type,
+            content,
+            traceParent,
+            traceState);
     }
 
     public void MarkProcessed(DateTimeOffset processedAt)

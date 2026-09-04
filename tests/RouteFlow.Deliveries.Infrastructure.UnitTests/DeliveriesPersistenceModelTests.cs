@@ -49,6 +49,21 @@ public sealed class DeliveriesPersistenceModelTests
     }
 
     [Fact]
+    public void Model_ShouldConstrainOutboxTraceContextToW3CLimits()
+    {
+        // Arrange
+        using var dbContext = CreateDbContext();
+
+        // Act
+        var outbox = dbContext.Model.GetEntityTypes()
+            .Single(entity => entity.ClrType.Name == "OutboxMessage");
+
+        // Assert
+        Assert.Equal(55, outbox.FindProperty("TraceParent")?.GetMaxLength());
+        Assert.Equal(512, outbox.FindProperty("TraceState")?.GetMaxLength());
+    }
+
+    [Fact]
     public void AddDeliveriesInfrastructure_ShouldRegisterDbContextAndRepository()
     {
         // Arrange

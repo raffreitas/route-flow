@@ -28,6 +28,12 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
         builder.Property(message => message.Error)
             .HasMaxLength(2000)
             .HasColumnName("error");
+        builder.Property(message => message.TraceParent)
+            .HasMaxLength(55)
+            .HasColumnName("trace_parent");
+        builder.Property(message => message.TraceState)
+            .HasMaxLength(512)
+            .HasColumnName("trace_state");
 
         builder.HasIndex(message => new { message.ProcessedAt, message.OccurredAt });
         builder.HasIndex(message => message.AggregateId);

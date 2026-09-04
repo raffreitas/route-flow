@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,12 +30,16 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
         // Assert
         Assert.Contains(appliedMigrations, migration => migration.EndsWith("_InitialDeliveries"));
         Assert.Contains(appliedMigrations, migration => migration.EndsWith("_AddDeliveriesOutbox"));
+        Assert.Contains(appliedMigrations, migration => migration.EndsWith("_AddOutboxTraceContext"));
     }
 
     [Fact]
     public async Task Repository_WhenAggregateHasDomainEvents_ShouldPersistOutboxMessage()
     {
         // Arrange
+        using var activity = new Activity("request").SetIdFormat(ActivityIdFormat.W3C);
+        activity.TraceStateString = "routeflow=test";
+        activity.Start();
         var delivery = CreateRequestedDelivery();
         await using (var serviceProvider = CreateServiceProvider())
         await using (var scope = serviceProvider.CreateAsyncScope())
@@ -55,7 +60,7 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT type, content::text, occurred_at
+            SELECT type, content::text, occurred_at, trace_parent, trace_state
             FROM deliveries.outbox_messages
             WHERE aggregate_id = @aggregateId AND type = @eventType
             """;
@@ -74,6 +79,8 @@ public sealed class DeliveriesPersistenceTests(PostgreSqlFixture fixture)
             DeliveryRequestedIntegrationEvent.EventType,
             reader.GetString(0));
         Assert.Equal(Now, reader.GetFieldValue<DateTimeOffset>(2));
+        Assert.Equal(activity.Id, reader.GetString(3));
+        Assert.Equal(activity.TraceStateString, reader.GetString(4));
 
         using var content = JsonDocument.Parse(reader.GetString(1));
         Assert.Equal(
