@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    if: github.event.pull_request.merged == true && github.actor != 'dependabot[bot]'
+    concurrency:
+      group: release-tagging
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release tag and release
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr || !pr.merged) {
+              core.info('PR not merged — skipping');
+              return;
+            }
+
+            const text = `${pr.title || ''}\n${pr.body || ''}`;
+            const bumps = [...text.matchAll(/\[(major|minor|patch)\]/gi)]
+              .map((match) => match[1].toLowerCase());
+            if (bumps.length !== 1) {
+              core.setFailed('Expected exactly one SemVer marker: [Patch], [Minor], or [Major].');
+              return;
+            }
+
+            const bump = bumps[0];
+            core.info(`Detected bump: ${bump}`);
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const tags = await github.paginate(github.rest.repos.listTags, { owner, repo, per_page: 100 });
+
+            function parseSemver(t) {
+              const m = t.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
+              if (!m) return null;
+              return { major: parseInt(m[1], 10), minor: parseInt(m[2], 10), patch: parseInt(m[3], 10) };
+            }
+
+            let latest = { major: 0, minor: 0, patch: 0, raw: 'v0.0.0' };
+            for (const t of tags) {
+              const s = parseSemver(t.name);
+              if (!s) continue;
+              if (
+                s.major > latest.major ||
+                (s.major === latest.major && s.minor > latest.minor) ||
+                (s.major === latest.major && s.minor === latest.minor && s.patch > latest.patch)
+              ) {
+                latest = { ...s, raw: t.name.startsWith('v') ? t.name : `v${t.name}` };
+              }
+            }
+            core.info(`Latest tag: ${latest.raw}`);
+
+            let [major, minor, patch] = [latest.major, latest.minor, latest.patch];
+            if (bump === 'major') { major += 1; minor = 0; patch = 0; }
+            else if (bump === 'minor') { minor += 1; patch = 0; }
+            else { patch += 1; }
+
+            const sha = pr.merge_commit_sha || (pr.head && pr.head.sha) || context.sha;
+            const existingTag = tags.find((tag) => parseSemver(tag.name) && tag.commit.sha === sha);
+            const tagName = existingTag ? existingTag.name : `v${major}.${minor}.${patch}`;
+
+            if (existingTag) {
+              core.info(`PR commit is already tagged as ${tagName}`);
+            } else {
+              core.info(`Creating tag ${tagName}`);
+
+              // A serialized job computes the next version only after earlier merges are tagged.
+              try {
+                await github.rest.git.getRef({ owner, repo, ref: `refs/tags/${tagName}` });
+                throw new Error(`Tag ${tagName} already exists and does not belong to PR #${pr.number}.`);
+              } catch (err) {
+                if (err.status !== 404) throw err;
+                await github.rest.git.createRef({ owner, repo, ref: `refs/tags/${tagName}`, sha });
+                core.info(`Created ref refs/tags/${tagName}`);
+              }
+            }
+
+            try {
+              await github.rest.repos.getReleaseByTag({ owner, repo, tag: tagName });
+              core.info(`Release ${tagName} already exists`);
+            } catch (err) {
+              if (err.status !== 404) throw err;
+              await github.rest.repos.createRelease({ owner, repo, tag_name: tagName, name: tagName, body: `Release from PR #${pr.number}: ${pr.title}`, draft: false, prerelease: false });
+              core.info(`Created release ${tagName}`);
+            }
